@@ -24,7 +24,7 @@ class ProtectedRemoteSoftware:
 
 class SoftwareProxy:
     """
-    Proxy: контролирует доступ и лениво создаёт реальный объект.
+    proxy: контролирует доступ и лениво создаёт реальный объект.
     """
     def __init__(self, title: str, required_license: str = "VALID-KEY") -> None:
         self._title = title
@@ -37,7 +37,7 @@ class SoftwareProxy:
         self.log.append(f"set_license({key})")
 
     def name(self) -> str:
-        return f"{self._title} (via Proxy)"
+        return f"{self._title} (via proxy)"
 
     def _check_access(self) -> bool:
         key = getattr(self, "_license_key", "")

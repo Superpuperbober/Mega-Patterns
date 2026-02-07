@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-import copy
 
 
 @dataclass(frozen=True)
@@ -16,20 +15,18 @@ class EquipmentMemento:
     use_proxy: bool
     license_key: str
 
+    # ✅ новое поле для паттерна State
+    software_state_name: str = "IDLE"
+
 
 class Caretaker:
-    """
-    Хранит историю memento и умеет undo/redo.
-    """
     def __init__(self) -> None:
         self._history: list[EquipmentMemento] = []
-        self._index: int = -1  # указывает на текущий memento
+        self._index: int = -1
 
     def backup(self, memento: EquipmentMemento) -> None:
-        # если мы откатились назад и потом сохраняем новое — стираем ветку redo
         if self._index < len(self._history) - 1:
             self._history = self._history[: self._index + 1]
-
         self._history.append(memento)
         self._index += 1
 

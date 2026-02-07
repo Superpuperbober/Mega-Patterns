@@ -47,7 +47,7 @@ class EquipmentType(Equipment):
 class EquipmentModel(Equipment):
     name: str = ""
     equipment_type: str = ""   # ✅ вернуть (тип, к которому относится модель)
-
+    software_state_name: str = "IDLE"
     specs: dict = field(default_factory=dict)
     functions: List[str] = field(default_factory=list)
     software: ISoftware = field(default_factory=BaseSoftware)
