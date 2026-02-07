@@ -14,6 +14,8 @@ class EquipmentBuilder(ABC):
     def add_function(self, func: str) -> None: ...
     @abstractmethod
     def set_software(self, title: str) -> None: ...
+    @ abstractmethod
+    def set_name(self, name: str) -> None: ...
     @abstractmethod
     def build(self) -> EquipmentModel: ...
 
@@ -25,17 +27,23 @@ class ConcreteEquipmentBuilder(EquipmentBuilder):
         self.reset()
 
     def reset(self) -> None:
-        self._log = ["reset() -> создан пустой Equipment"]
+        self._log = ["reset() -> создан пустой EquipmentModel"]
         self._equipment = EquipmentModel(
+            name="(not set)",
             equipment_type="(not set)",
             specs={},
             functions=[],
             software=BaseSoftware("Base Software"),
         )
 
-    def set_type(self, equipment_type: EquipmentType) -> None:
+    def set_name(self, name: str) -> None:
         assert self._equipment is not None
-        equipment_type.models.append(self)
+        self._equipment.name = name
+        self._log.append(f"set_name({name})")
+
+    def set_type(self, equipment_type: str) -> None:
+        assert self._equipment is not None
+        self._equipment.equipment_type = equipment_type
         self._log.append(f"set_type({equipment_type})")
 
     def add_spec(self, key: str, value) -> None:
@@ -68,7 +76,8 @@ class Director:
 
     def make_bike(self) -> EquipmentModel:
         self._builder.reset()
-        self._builder.set_type("Велотренажёр")
+        self._builder.set_type("Велотренажёр")  # это будет equipment_type
+        self._builder.set_name("Bike Model X")  # добавь метод set_name
         self._builder.add_spec("max_resistance", 20)
         self._builder.add_spec("has_pulse_sensor", True)
         self._builder.add_function("Тренировка по пульсу")
