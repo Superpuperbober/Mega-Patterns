@@ -28,6 +28,14 @@ class Equipment:
     base_software: ISoftware | None = None
     build_log: List[str] = field(default_factory=list)
 
+    # Для memento
+    base_software_title: str = "Base Software"
+    use_online: bool = False
+    use_analytics: bool = False
+    use_proxy: bool = False
+    license_key: str = ""
+
+
     def summary(self) -> str:
         funcs = ", ".join(self.functions) if self.functions else "—"
         specs_lines = "\n".join([f"- {k}: {v}" for k, v in self.specs.items()]) or "—"
