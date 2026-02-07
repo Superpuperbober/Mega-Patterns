@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Protocol
 from abc import ABC, abstractmethod
+import copy
 
 class ISoftware(Protocol):
     def name(self) -> str: ...
@@ -72,3 +73,12 @@ class EquipmentModel(Equipment):
             f"Функции:\n{funcs}\n\n"
             f"ПО выполняет:\n{self.software.operation()}"
         )
+    
+    # При использовании нужно добавить эту модель в тип.models.append(экземпляр клонирования)
+    def clone(self) -> EquipmentModel:
+        """Метод для создания клона объекта (реализация паттерна Прототип)"""
+
+        cloned = copy.deepcopy(self)
+
+        cloned.name = f"{self.name} (Копия)"
+        return cloned
