@@ -40,4 +40,5 @@ dist/
 *.tkc
 
 
+.idea/
 *.iml
