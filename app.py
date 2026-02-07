@@ -3,10 +3,14 @@ from tkinter import ttk, messagebox
 
 from patterns.factory import FactoryRegistry, BikeFactory, TreadmillFactory, RowingMachineFactory
 from patterns.decorator import OnlineSoftwareDecorator, AnalyticsDecorator
+<<<<<<< Updated upstream
 from patterns.Proxy import SoftwareProxy
 from patterns.memento import EquipmentMemento, Caretaker
 
 from domain.equipment import Equipment,BaseSoftware
+=======
+from domain.equipment import EquipmentModel
+>>>>>>> Stashed changes
 
 
 class App(tk.Tk):
@@ -16,7 +20,7 @@ class App(tk.Tk):
         self.geometry("820x560")
 
         # Текущий созданный тренажёр (один объект “живёт” между вкладками)
-        self.current_equipment: Equipment | None = None
+        self.current_equipment: EquipmentModel | None = None
 
         # Реестр фабрик
         self.registry = FactoryRegistry()

@@ -1,30 +1,30 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 
-from domain.equipment import Equipment
+from domain.equipment import EquipmentModel
 from patterns.builder import ConcreteEquipmentBuilder, Director
 
 
 class EquipmentFactory(ABC):
     @abstractmethod
-    def create(self) -> Equipment:
+    def create(self) -> EquipmentModel:
         raise NotImplementedError
 
 
 class BikeFactory(EquipmentFactory):
-    def create(self) -> Equipment:
+    def create(self) -> EquipmentModel:
         director = Director(ConcreteEquipmentBuilder())
         return director.make_bike()
 
 
 class TreadmillFactory(EquipmentFactory):
-    def create(self) -> Equipment:
+    def create(self) -> EquipmentModel:
         director = Director(ConcreteEquipmentBuilder())
         return director.make_treadmill()
 
 
 class RowingMachineFactory(EquipmentFactory):
-    def create(self) -> Equipment:
+    def create(self) -> EquipmentModel:
         director = Director(ConcreteEquipmentBuilder())
         return director.make_rowing()
 
