@@ -1,33 +1,33 @@
-# ===== Python =====
+
 __pycache__/
 *.py[cod]
 *$py.class
 
-# ===== Virtual environments =====
+
 .venv/
 venv/
 env/
 ENV/
 
-# ===== IDE / Editors =====
+
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# ===== OS =====
+
 .DS_Store
 Thumbs.db
 
-# ===== Logs =====
+
 *.log
 
-# ===== Test / coverage =====
+
 .coverage
 htmlcov/
 .pytest_cache/
 
-# ===== Build / distribution =====
+
 build/
 dist/
 *.egg-info/
@@ -38,3 +38,6 @@ dist/
 
 
 *.tkc
+
+
+*.iml
