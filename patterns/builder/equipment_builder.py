@@ -21,9 +21,11 @@ class EquipmentBuilder(ABC):
 class ConcreteEquipmentBuilder(EquipmentBuilder):
     def __init__(self) -> None:
         self._equipment: Equipment | None = None
+        self._log: list[str] = []
         self.reset()
 
     def reset(self) -> None:
+        self._log = ["reset() -> создан пустой Equipment"]
         self._equipment = Equipment(
             equipment_type="(not set)",
             specs={},
@@ -34,28 +36,33 @@ class ConcreteEquipmentBuilder(EquipmentBuilder):
     def set_type(self, equipment_type: str) -> None:
         assert self._equipment is not None
         self._equipment.equipment_type = equipment_type
+        self._log.append(f"set_type({equipment_type})")
 
     def add_spec(self, key: str, value) -> None:
         assert self._equipment is not None
         self._equipment.specs[key] = value
+        self._log.append(f"add_spec({key}={value})")
 
     def add_function(self, func: str) -> None:
         assert self._equipment is not None
         self._equipment.functions.append(func)
+        self._log.append(f"add_function({func})")
 
     def set_software(self, title: str) -> None:
         assert self._equipment is not None
         self._equipment.software = BaseSoftware(title)
+        self._log.append(f"set_software({title})")
 
     def build(self) -> Equipment:
         assert self._equipment is not None
         result = self._equipment
-        self.reset()  # можно собирать следующий объект тем же builder’ом
+        result.build_log = list(self._log) + ["build() -> объект готов"]
+        self.reset()
+        result.base_software = result.software
         return result
 
 
 class Director:
-    """Знает последовательности сборки типовых конфигураций."""
     def __init__(self, builder: EquipmentBuilder) -> None:
         self._builder = builder
 

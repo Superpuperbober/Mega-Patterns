@@ -25,6 +25,8 @@ class Equipment:
     specs: dict
     functions: List[str] = field(default_factory=list)
     software: ISoftware = field(default_factory=BaseSoftware)
+    base_software: ISoftware | None = None
+    build_log: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         funcs = ", ".join(self.functions) if self.functions else "—"
