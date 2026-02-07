@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 
 from patterns.factory import FactoryRegistry, BikeFactory, TreadmillFactory, RowingMachineFactory
 from patterns.decorator import OnlineSoftwareDecorator, AnalyticsDecorator
+from patterns.Proxy import SoftwareProxy
 from domain.equipment import Equipment
 
 
@@ -40,14 +41,17 @@ class App(tk.Tk):
         self.tab_factory = ttk.Frame(self.notebook, padding=10)
         self.tab_builder = ttk.Frame(self.notebook, padding=10)
         self.tab_decorator = ttk.Frame(self.notebook, padding=10)
+        self.tab_proxy = ttk.Frame(self.notebook, padding=10)
 
         self.notebook.add(self.tab_factory, text="1) Factory")
         self.notebook.add(self.tab_builder, text="2) Builder")
         self.notebook.add(self.tab_decorator, text="3) Decorator")
+        self.notebook.add(self.tab_proxy, text="4) Proxy")
 
         self._build_factory_tab()
         self._build_builder_tab()
         self._build_decorator_tab()
+        self._build_proxy_tab()
 
     def _build_factory_tab(self) -> None:
         ttk.Label(self.tab_factory, text="Выбери тип тренажёра и создай объект через фабрику:").pack(anchor="w")
@@ -121,6 +125,39 @@ class App(tk.Tk):
             foreground="#444",
         ).pack(anchor="w", pady=(8, 0))
 
+    def _build_proxy_tab(self) -> None:
+        ttk.Label(
+            self.tab_proxy,
+            text="Proxy: доступ к ПО через проверку лицензии и ленивую загрузку.",
+        ).pack(anchor="w")
+
+        controls = ttk.Frame(self.tab_proxy)
+        controls.pack(anchor="w", pady=10)
+
+        self.var_use_proxy = tk.BooleanVar(value=False)
+        ttk.Checkbutton(controls, text="Использовать Proxy для ПО", variable=self.var_use_proxy).pack(
+            side="left", padx=(0, 12)
+        )
+
+        ttk.Label(controls, text="License key:").pack(side="left")
+        self.license_entry = ttk.Entry(controls, width=20)
+        self.license_entry.insert(0, "VALID-KEY")  # для удобства
+        self.license_entry.pack(side="left", padx=8)
+
+        ttk.Button(controls, text="Применить Proxy", command=self.apply_proxy).pack(side="left", padx=4)
+        ttk.Button(controls, text="Вызвать operation()", command=self.run_software_operation).pack(side="left", padx=4)
+
+        ttk.Separator(self.tab_proxy).pack(fill="x", pady=10)
+
+        self.proxy_output = tk.Text(self.tab_proxy, wrap="word", height=18)
+        self.proxy_output.pack(fill="both", expand=True)
+
+        ttk.Label(
+            self.tab_proxy,
+            text="Идея: GUI/система работает с ISoftware, а Proxy скрывает проверку/загрузку.",
+            foreground="#444",
+        ).pack(anchor="w", pady=(8, 0))
+
     # ---------------- Logic ----------------
     def on_create(self) -> None:
         key = self.selected_key.get()
@@ -140,6 +177,12 @@ class App(tk.Tk):
         # сразу обновим остальные вкладки
         self.refresh_builder_tab()
         self.refresh_decorator_tab()
+
+        # сброс proxy-UI
+        if hasattr(self, "var_use_proxy"):
+            self.var_use_proxy.set(False)
+        if hasattr(self, "proxy_output"):
+            self.proxy_output.delete("1.0", "end")
 
     def on_clear(self) -> None:
         self.current_equipment = None
@@ -197,6 +240,56 @@ class App(tk.Tk):
         self.refresh_builder_tab()
         self.refresh_decorator_tab()
 
+    def apply_proxy(self) -> None:
+        self.proxy_output.delete("1.0", "end")
+
+        if not self.current_equipment:
+            self.proxy_output.insert("1.0", "Сначала создай тренажёр во вкладке Factory.")
+            return
+
+        if not self.var_use_proxy.get():
+            self.proxy_output.insert("1.0", "Proxy выключен (галочка не установлена).")
+            return
+
+        # Берём текущее ПО (оно может быть уже с декораторами)
+        current_title = self.current_equipment.software.name()
+        proxy = SoftwareProxy(title=current_title, required_license="VALID-KEY")
+
+        key = self.license_entry.get().strip()
+        proxy.set_license(key)
+
+        # Важно: заменяем ПО на прокси
+        self.current_equipment.software = proxy
+
+        self.proxy_output.insert("1.0", f"Proxy применён поверх ПО: {proxy.name()}\nЛицензия установлена: {key}\n")
+
+    def run_software_operation(self) -> None:
+        self.proxy_output.delete("1.0", "end")
+
+        if not self.current_equipment:
+            self.proxy_output.insert("1.0", "Сначала создай тренажёр во вкладке Factory.")
+            return
+
+        software = self.current_equipment.software
+        result = software.operation()
+
+        # если это наш прокси — покажем внутренний лог
+        if isinstance(software, SoftwareProxy):
+            log_text = "\n".join(f"- {x}" for x in software.log) if software.log else "(лог пуст)"
+            text = (
+                f"software.name(): {software.name()}\n\n"
+                f"Результат operation():\n{result}\n\n"
+                f"Лог Proxy:\n{log_text}"
+            )
+        else:
+            text = (
+                "Текущее ПО НЕ является Proxy.\n"
+                "Перейди в Proxy-вкладку, включи галочку и нажми 'Применить Proxy'.\n\n"
+                f"software.name(): {software.name()}\n\n"
+                f"Результат operation():\n{result}"
+            )
+
+        self.proxy_output.insert("1.0", text)
 
 if __name__ == "__main__":
     App().mainloop()
