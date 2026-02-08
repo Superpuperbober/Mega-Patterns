@@ -12,14 +12,29 @@ class SystemState(ABC):
     def __init__(self, context: SystemContext):
         self.context = context
 
+
     @abstractmethod
     def name(self) -> str: ...
+
+    @abstractmethod
+    def edit(self) -> str: ...
+
+    @abstractmethod
+    def view(self)-> str: ...
 
     @abstractmethod
     def show_funcs(self) -> None: ...
 
 
 class EditState(SystemState):
+
+    def edit(self) -> str:
+        print("Уже состояние EDIT")
+
+    def view(self) -> str:
+        print("Перешли в состояние VIEW")
+        self.context.set_state(ViewState)
+
     def name(self) -> str:
         return "EDIT"
 
@@ -29,6 +44,14 @@ class EditState(SystemState):
 
 
 class ViewState(SystemState):
+
+    def view(self) -> str:
+        print("уже состояние VIEW")
+
+    def edit(self) -> str:
+        print ("Перешли в состояние EDIT")
+        self.context.set_state(EditState)
+
     def name(self) -> str:
         return "VIEW"
 

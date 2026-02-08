@@ -77,6 +77,7 @@ class App(tk.Tk):
         self.system_state: SystemState = EditState(self)
 
 
+
         self._editable_widgets: list[tk.Widget] = []
 
 
@@ -382,6 +383,12 @@ class App(tk.Tk):
         self.system_state.show_funcs()
         self.log(f"[STATE] -> {self.system_state.name()}", "STATE")
         self.refresh_bottom_bar()
+
+    def edit(self):
+        self.state.edit(self)
+
+    def view(self):
+        self.state.view(self)
 
     def enable_editing(self, enabled: bool) -> None:
         self._editing_enabled = enabled
