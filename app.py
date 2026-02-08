@@ -1,12 +1,13 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from datetime import datetime
 
 from patterns.factory import FactoryRegistry, BikeFactory, TreadmillFactory, RowingMachineFactory
 from patterns.decorator import OnlineSoftwareDecorator, AnalyticsDecorator
 from patterns.proxy import SoftwareProxy
-
 from patterns.memento import EquipmentMemento, Caretaker
 
+# State (как в документе)
 from patterns.state import SystemState, EditState, ViewState
 
 from patterns.command import (
@@ -24,207 +25,274 @@ from domain.equipment import EquipmentModel, BaseSoftware
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Trainer Software — Patterns Demo (Factory+Builder+Decorator+Proxy+State+Memento+Command)")
-        self.geometry("980x680")
+        self.title("Mega-Patterns — Trainer Software Control Panel")
+        self.geometry("1180x720")
+        self.minsize(1100, 650)
 
+        # domain
         self.current_equipment: EquipmentModel | None = None
 
-        # factory registry
+        # Composite catalog (тип -> список моделей)
+        self._catalog: dict[str, list[EquipmentModel]] = {}
+        self._tree_type_nodes: dict[str, str] = {}     # equipment_type -> tree item id
+        self._tree_model_nodes: dict[int, str] = {}    # id(model) -> tree item id
+
+        # Memento UI mapping: listbox index -> EquipmentMemento
+        self._snapshot_list: list[EquipmentMemento] = []
+
+        # factory
         self.registry = FactoryRegistry()
         self.registry.register("bike", BikeFactory())
         self.registry.register("treadmill", TreadmillFactory())
         self.registry.register("rowing", RowingMachineFactory())
 
-        # memento caretaker
+        # memento
         self.caretaker = Caretaker()
 
-        # invoker
+        # command
         self.invoker = Invoker()
         self.invoker.register("save_snapshot", SaveSnapshotCommand(self))
         self.invoker.register("undo", UndoCommand(self))
         self.invoker.register("redo", RedoCommand(self))
 
-        # State: режим системы (по документу)
+        # state (по документу)
         self._editing_enabled: bool = True
         self.system_state: SystemState = EditState(self)
 
-        # UI
+        # UI tracking
         self._editable_widgets: list[tk.Widget] = []
+
         self._build_ui()
-
-        # применяем состояние сразу
         self.system_state.show_funcs()
+        self.refresh_all()
 
-    # ---------------- UI ----------------
+    # =========================================================
+    # UI
+    # =========================================================
     def _build_ui(self) -> None:
-        root = ttk.Frame(self, padding=10)
-        root.pack(fill="both", expand=True)
-
-        # верхняя панель: переключение режимов (State)
-        topbar = ttk.Frame(root)
-        topbar.pack(fill="x", pady=(0, 8))
+        # Top header
+        header = ttk.Frame(self, padding=(12, 10))
+        header.pack(fill="x")
 
         ttk.Label(
-            topbar,
-            text="Factory → Builder → Decorator → Proxy → State(Edit/View) → Memento (+ Command)",
-            font=("Segoe UI", 12, "bold"),
+            header,
+            text="Trainer Software — Patterns Demo Dashboard",
+            font=("Segoe UI", 15, "bold"),
         ).pack(side="left")
 
-        ttk.Button(topbar, text="EDIT", command=lambda: self.set_state(EditState)).pack(side="right", padx=4)
-        ttk.Button(topbar, text="VIEW", command=lambda: self.set_state(ViewState)).pack(side="right", padx=4)
+        ttk.Button(header, text="EDIT", command=lambda: self.set_state(EditState)).pack(side="right", padx=4)
+        ttk.Button(header, text="VIEW", command=lambda: self.set_state(ViewState)).pack(side="right", padx=4)
 
-        self.status_label = ttk.Label(root, text="", foreground="#444")
-        self.status_label.pack(anchor="w", pady=(0, 10))
+        self.status_label = ttk.Label(self, text="", padding=(12, 0))
+        self.status_label.pack(fill="x")
 
-        self.notebook = ttk.Notebook(root)
-        self.notebook.pack(fill="both", expand=True)
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
 
-        self.tab_factory = ttk.Frame(self.notebook, padding=10)
-        self.tab_builder = ttk.Frame(self.notebook, padding=10)
-        self.tab_decorator = ttk.Frame(self.notebook, padding=10)
-        self.tab_proxy = ttk.Frame(self.notebook, padding=10)
-        self.tab_memento = ttk.Frame(self.notebook, padding=10)
+        body.columnconfigure(0, weight=0)  # controls
+        body.columnconfigure(1, weight=1)  # info
+        body.columnconfigure(2, weight=1)  # right: composite + log
+        body.rowconfigure(0, weight=1)
 
-        self.notebook.add(self.tab_factory, text="1) Factory")
-        self.notebook.add(self.tab_builder, text="2) Builder")
-        self.notebook.add(self.tab_decorator, text="3) Decorator")
-        self.notebook.add(self.tab_proxy, text="4) Proxy")
-        self.notebook.add(self.tab_memento, text="5) Memento + Command")
+        self._build_left_controls(body)
+        self._build_center_info(body)
+        self._build_right_panel(body)
 
-        self._build_factory_tab()
-        self._build_builder_tab()
-        self._build_decorator_tab()
-        self._build_proxy_tab()
-        self._build_memento_tab()
+        self.bottom_bar = ttk.Label(self, text="", padding=(12, 6))
+        self.bottom_bar.pack(fill="x")
 
-    def _build_factory_tab(self) -> None:
-        ttk.Label(self.tab_factory, text="Выбери тип тренажёра и создай объект через фабрику:").pack(anchor="w")
+    def _card(self, parent: ttk.Frame, title: str) -> ttk.Labelframe:
+        lf = ttk.Labelframe(parent, text=title, padding=10)
+        lf.pack(fill="x", pady=8)
+        return lf
 
-        row = ttk.Frame(self.tab_factory)
-        row.pack(anchor="w", pady=10)
+    # ---------------- LEFT ----------------
+    def _build_left_controls(self, parent: ttk.Frame) -> None:
+        left = ttk.Frame(parent)
+        left.grid(row=0, column=0, sticky="ns", padx=(0, 10))
+        left.rowconfigure(0, weight=1)
 
-        ttk.Label(row, text="Тип:").pack(side="left")
+        # FACTORY
+        c1 = self._card(left, "1) Factory")
+        ttk.Label(c1, text="Тип тренажёра:").pack(anchor="w")
+
         self.selected_key = tk.StringVar(value=self.registry.keys()[0])
-        self.type_combo = ttk.Combobox(
-            row,
-            textvariable=self.selected_key,
-            values=self.registry.keys(),
-            state="readonly",
-            width=20,
+        self.combo_type = ttk.Combobox(
+            c1, textvariable=self.selected_key, values=self.registry.keys(), state="readonly", width=18
         )
-        self.type_combo.pack(side="left", padx=8)
+        self.combo_type.pack(anchor="w", pady=(4, 8))
+        self._editable_widgets.append(self.combo_type)
 
-        btn_create = ttk.Button(row, text="Создать (Factory)", command=self.on_create)
-        btn_create.pack(side="left", padx=4)
+        btn_create = ttk.Button(c1, text="Create Equipment", command=self.on_create)
+        btn_create.pack(fill="x")
         self._editable_widgets.append(btn_create)
-        self._editable_widgets.append(self.type_combo)
 
-        btn_clear = ttk.Button(row, text="Очистить", command=self.on_clear)
-        btn_clear.pack(side="left", padx=4)
-        # очистку оставим доступной всегда
+        ttk.Button(c1, text="Clear current", command=self.on_clear).pack(fill="x", pady=(6, 0))
 
-        ttk.Separator(self.tab_factory).pack(fill="x", pady=10)
+        # BUILDER
+        c2 = self._card(left, "2) Builder")
+        ttk.Label(c2, text="Лог шагов сборки:").pack(anchor="w")
+        ttk.Button(c2, text="Show Builder Log", command=self.show_builder_log).pack(fill="x", pady=(6, 0))
 
-        self.factory_output = tk.Text(self.tab_factory, wrap="word", height=18)
-        self.factory_output.pack(fill="both", expand=True)
-
-    def _build_builder_tab(self) -> None:
-        ttk.Label(self.tab_builder, text="Лог Builder (шаги сборки):").pack(anchor="w")
-        ttk.Button(self.tab_builder, text="Показать лог", command=self.refresh_builder_tab).pack(anchor="w", pady=10)
-
-        self.builder_output = tk.Text(self.tab_builder, wrap="word", height=22)
-        self.builder_output.pack(fill="both", expand=True)
-
-    def _build_decorator_tab(self) -> None:
-        ttk.Label(self.tab_decorator, text="Decorator: включай модули ПО (через Command):").pack(anchor="w")
-
-        controls = ttk.Frame(self.tab_decorator)
-        controls.pack(anchor="w", pady=10)
-
+        # DECORATOR
+        c3 = self._card(left, "3) Decorator")
         self.var_online = tk.BooleanVar(value=False)
         self.var_analytics = tk.BooleanVar(value=False)
 
-        self.cb_online = ttk.Checkbutton(controls, text="Online", variable=self.var_online)
-        self.cb_online.pack(side="left", padx=(0, 12))
-        self._editable_widgets.append(self.cb_online)
+        cb1 = ttk.Checkbutton(c3, text="Online module", variable=self.var_online)
+        cb1.pack(anchor="w")
+        cb2 = ttk.Checkbutton(c3, text="Analytics module", variable=self.var_analytics)
+        cb2.pack(anchor="w")
 
-        self.cb_analytics = ttk.Checkbutton(controls, text="Analytics", variable=self.var_analytics)
-        self.cb_analytics.pack(side="left", padx=(0, 12))
-        self._editable_widgets.append(self.cb_analytics)
+        self._editable_widgets.extend([cb1, cb2])
 
-        btn_apply = ttk.Button(controls, text="Применить (Command)", command=self.on_apply_decorators_click)
-        btn_apply.pack(side="left", padx=4)
-        self._editable_widgets.append(btn_apply)
+        btn_apply_dec = ttk.Button(c3, text="Apply Decorators (Command)", command=self.on_apply_decorators_click)
+        btn_apply_dec.pack(fill="x", pady=(8, 0))
+        self._editable_widgets.append(btn_apply_dec)
 
-        btn_reset = ttk.Button(controls, text="Сбросить к базе", command=self.reset_software)
-        btn_reset.pack(side="left", padx=4)
+        btn_reset = ttk.Button(c3, text="Reset to Base", command=self.reset_software)
+        btn_reset.pack(fill="x", pady=(6, 0))
         self._editable_widgets.append(btn_reset)
 
-        ttk.Separator(self.tab_decorator).pack(fill="x", pady=10)
-
-        self.decorator_output = tk.Text(self.tab_decorator, wrap="word", height=18)
-        self.decorator_output.pack(fill="both", expand=True)
-
-    def _build_proxy_tab(self) -> None:
-        ttk.Label(self.tab_proxy, text="Proxy: лицензия + ленивый доступ к ПО.").pack(anchor="w")
-
-        top = ttk.Frame(self.tab_proxy)
-        top.pack(anchor="w", pady=10)
-
+        # PROXY
+        c4 = self._card(left, "4) Proxy")
         self.var_use_proxy = tk.BooleanVar(value=False)
-        self.cb_proxy = ttk.Checkbutton(top, text="Использовать Proxy", variable=self.var_use_proxy)
-        self.cb_proxy.pack(side="left", padx=(0, 12))
-        self._editable_widgets.append(self.cb_proxy)
+        cbp = ttk.Checkbutton(c4, text="Enable Proxy", variable=self.var_use_proxy)
+        cbp.pack(anchor="w")
+        self._editable_widgets.append(cbp)
 
-        ttk.Label(top, text="License key:").pack(side="left")
-        self.license_entry = ttk.Entry(top, width=20)
+        ttk.Label(c4, text="License key:").pack(anchor="w", pady=(6, 0))
+        self.license_entry = ttk.Entry(c4)
         self.license_entry.insert(0, "VALID-KEY")
-        self.license_entry.pack(side="left", padx=8)
+        self.license_entry.pack(fill="x", pady=(2, 6))
         self._editable_widgets.append(self.license_entry)
 
-        btn_apply_proxy = ttk.Button(top, text="Применить Proxy (Command)", command=self.on_apply_proxy_click)
-        btn_apply_proxy.pack(side="left", padx=4)
+        btn_apply_proxy = ttk.Button(c4, text="Apply Proxy (Command)", command=self.on_apply_proxy_click)
+        btn_apply_proxy.pack(fill="x")
         self._editable_widgets.append(btn_apply_proxy)
 
-        # operation разрешим даже в VIEW (просмотр)
-        ttk.Button(top, text="Вызвать operation()", command=self.run_software_operation).pack(side="left", padx=4)
+        ttk.Button(c4, text="Run operation()", command=self.run_software_operation).pack(fill="x", pady=(6, 0))
 
-        ttk.Separator(self.tab_proxy).pack(fill="x", pady=10)
+        # MEMENTO
+        c5 = self._card(left, "5) Memento")
+        btn_save = ttk.Button(c5, text="Save Snapshot", command=lambda: self.invoker.execute("save_snapshot"))
+        btn_undo = ttk.Button(c5, text="Undo", command=lambda: self.invoker.execute("undo"))
+        btn_redo = ttk.Button(c5, text="Redo", command=lambda: self.invoker.execute("redo"))
 
-        self.proxy_output = tk.Text(self.tab_proxy, wrap="word", height=18)
-        self.proxy_output.pack(fill="both", expand=True)
+        btn_save.pack(fill="x")
+        btn_undo.pack(fill="x", pady=(6, 0))
+        btn_redo.pack(fill="x", pady=(6, 0))
 
-    def _build_memento_tab(self) -> None:
-        ttk.Label(self.tab_memento, text="Memento + Command: снимки, Undo/Redo.").pack(anchor="w")
+        self._editable_widgets.extend([btn_save, btn_undo, btn_redo])
 
-        controls = ttk.Frame(self.tab_memento)
-        controls.pack(anchor="w", pady=10)
+    # ---------------- CENTER ----------------
+    def _build_center_info(self, parent: ttk.Frame) -> None:
+        center = ttk.Frame(parent)
+        center.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
+        center.rowconfigure(0, weight=1)
+        center.rowconfigure(1, weight=1)
+        center.rowconfigure(2, weight=1)
+        center.columnconfigure(0, weight=1)
 
-        self.btn_save_snapshot = ttk.Button(
-            controls, text="Сохранить снимок", command=lambda: self.invoker.execute("save_snapshot")
-        )
-        self.btn_save_snapshot.pack(side="left", padx=4)
-        self._editable_widgets.append(self.btn_save_snapshot)
+        # Equipment card
+        eq_card = ttk.Labelframe(center, text="Current Equipment (Product)", padding=10)
+        eq_card.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
+        eq_card.rowconfigure(0, weight=1)
+        eq_card.columnconfigure(0, weight=1)
 
-        self.btn_undo = ttk.Button(controls, text="Undo", command=lambda: self.invoker.execute("undo"))
-        self.btn_undo.pack(side="left", padx=4)
-        self._editable_widgets.append(self.btn_undo)
+        self.txt_equipment = tk.Text(eq_card, wrap="word")
+        self.txt_equipment.grid(row=0, column=0, sticky="nsew")
 
-        self.btn_redo = ttk.Button(controls, text="Redo", command=lambda: self.invoker.execute("redo"))
-        self.btn_redo.pack(side="left", padx=4)
-        self._editable_widgets.append(self.btn_redo)
+        # Software chain card
+        sw_card = ttk.Labelframe(center, text="Software chain (Decorator/Proxy)", padding=10)
+        sw_card.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
+        sw_card.rowconfigure(0, weight=1)
+        sw_card.columnconfigure(0, weight=1)
 
-        ttk.Separator(self.tab_memento).pack(fill="x", pady=10)
+        self.txt_software = tk.Text(sw_card, wrap="word")
+        self.txt_software.grid(row=0, column=0, sticky="nsew")
 
-        self.memento_output = tk.Text(self.tab_memento, wrap="word", height=18)
-        self.memento_output.pack(fill="both", expand=True)
+        # Memento card (List + details)
+        mem_card = ttk.Labelframe(center, text="Memento (Snapshots)", padding=10)
+        mem_card.grid(row=2, column=0, sticky="nsew")
+        mem_card.rowconfigure(0, weight=1)
+        mem_card.rowconfigure(1, weight=1)
+        mem_card.columnconfigure(0, weight=1)
 
-        self.refresh_memento_tab()
+        top = ttk.Frame(mem_card)
+        top.grid(row=0, column=0, sticky="nsew")
+        top.columnconfigure(0, weight=1)
+        top.columnconfigure(1, weight=1)
+        top.rowconfigure(0, weight=1)
 
-    # ---------------- State (как в документе) ----------------
+        # Listbox snapshots
+        left_box = ttk.Frame(top)
+        left_box.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left_box.rowconfigure(1, weight=1)
+        left_box.columnconfigure(0, weight=1)
+
+        ttk.Label(left_box, text="Snapshots list:").grid(row=0, column=0, sticky="w")
+        self.lst_snapshots = tk.Listbox(left_box, height=6)
+        self.lst_snapshots.grid(row=1, column=0, sticky="nsew")
+        self.lst_snapshots.bind("<<ListboxSelect>>", self._on_snapshot_select)
+
+        btn_restore = ttk.Button(left_box, text="Restore selected", command=self.restore_selected_snapshot)
+        btn_restore.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        self._editable_widgets.append(btn_restore)
+
+        # Details
+        right_box = ttk.Frame(top)
+        right_box.grid(row=0, column=1, sticky="nsew")
+        right_box.rowconfigure(1, weight=1)
+        right_box.columnconfigure(0, weight=1)
+
+        ttk.Label(right_box, text="Selected snapshot details:").grid(row=0, column=0, sticky="w")
+        self.txt_memento = tk.Text(right_box, wrap="word", height=6)
+        self.txt_memento.grid(row=1, column=0, sticky="nsew")
+
+        # Caretaker info line
+        self.lbl_memento_info = ttk.Label(mem_card, text="", foreground="#444")
+        self.lbl_memento_info.grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+    # ---------------- RIGHT: Composite + Log ----------------
+    def _build_right_panel(self, parent: ttk.Frame) -> None:
+        right = ttk.Frame(parent)
+        right.grid(row=0, column=2, sticky="nsew")
+        right.rowconfigure(0, weight=1)
+        right.rowconfigure(1, weight=1)
+        right.columnconfigure(0, weight=1)
+
+        # Composite tree
+        comp_card = ttk.Labelframe(right, text="Composite Catalog (Type → Models)", padding=10)
+        comp_card.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
+        comp_card.rowconfigure(0, weight=1)
+        comp_card.columnconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(comp_card, columns=("kind",), show="tree headings")
+        self.tree.heading("#0", text="Hierarchy")
+        self.tree.heading("kind", text="Node type")
+        self.tree.column("kind", width=100, anchor="center")
+        self.tree.grid(row=0, column=0, sticky="nsew")
+
+        self.tree.bind("<Double-1>", self._on_tree_double_click)
+
+        # Log
+        log_card = ttk.Labelframe(right, text="Action Log (Command/Proxy)", padding=10)
+        log_card.grid(row=1, column=0, sticky="nsew")
+        log_card.rowconfigure(0, weight=1)
+        log_card.columnconfigure(0, weight=1)
+
+        self.txt_log = tk.Text(log_card, wrap="word")
+        self.txt_log.grid(row=0, column=0, sticky="nsew")
+
+    # =========================================================
+    # State (как в документе)
+    # =========================================================
     def set_state(self, state_cls: type[SystemState]) -> None:
         self.system_state = state_cls(self)
         self.system_state.show_funcs()
+        self.log(f"[STATE] -> {self.system_state.name()}")
+        self.refresh_bottom_bar()
 
     def enable_editing(self, enabled: bool) -> None:
         self._editing_enabled = enabled
@@ -238,12 +306,15 @@ class App(tk.Tk):
     def set_status(self, text: str) -> None:
         self.status_label.configure(text=text)
 
-    # ---------------- Build software chain (без StatefulSoftware!) ----------------
+    # =========================================================
+    # Helpers
+    # =========================================================
+    def log(self, text: str) -> None:
+        self.txt_log.insert("end", text + "\n")
+        self.txt_log.see("end")
+
     def rebuild_software_from_flags(self) -> None:
-        """
-        Собираем цепочку (как раньше):
-        BaseSoftware -> Decorators -> Proxy
-        """
+        """BaseSoftware -> Decorators -> Proxy"""
         eq = self.current_equipment
         if not eq:
             return
@@ -262,10 +333,179 @@ class App(tk.Tk):
 
         eq.software = software
 
-    # ---------------- Logic ----------------
+    def software_chain_text(self) -> str:
+        eq = self.current_equipment
+        if not eq:
+            return "Нет созданного тренажёра."
+
+        chain = [f"BaseSoftware('{eq.base_software_title}')"]
+        if eq.use_online:
+            chain.append("OnlineDecorator")
+        if eq.use_analytics:
+            chain.append("AnalyticsDecorator")
+        if eq.use_proxy:
+            chain.append(f"Proxy(license='{eq.license_key}')")
+
+        return (
+            "Цепочка обёрток:\n"
+            + "  -> ".join(chain)
+            + "\n\n"
+            + f"software.name(): {eq.software.name()}\n"
+            + "Подсказка: нажми 'Run operation()' чтобы увидеть поведение."
+        )
+
+    # ---------------- Composite helpers ----------------
+    def _add_to_catalog(self, model: EquipmentModel) -> None:
+        """
+        Composite demo: тип (композит) содержит модели (листья).
+        Мы поддерживаем дерево в TreeView.
+        """
+        eq_type = getattr(model, "equipment_type", "") or "UnknownType"
+        if eq_type not in self._catalog:
+            self._catalog[eq_type] = []
+
+        # не добавляем дубликаты по id объекта
+        if all(id(x) != id(model) for x in self._catalog[eq_type]):
+            self._catalog[eq_type].append(model)
+
+        self._rebuild_tree()
+
+    def _rebuild_tree(self) -> None:
+        # очистим дерево
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        self._tree_type_nodes.clear()
+        self._tree_model_nodes.clear()
+
+        for eq_type in sorted(self._catalog.keys()):
+            type_id = self.tree.insert("", "end", text=eq_type, values=("TYPE",))
+            self._tree_type_nodes[eq_type] = type_id
+
+            for m in self._catalog[eq_type]:
+                label = f"{getattr(m, 'name', 'Model')}  (software: {m.software.name()})"
+                mid = self.tree.insert(type_id, "end", text=label, values=("MODEL",))
+                self._tree_model_nodes[id(m)] = mid
+
+        # раскрыть все типы
+        for t in self._tree_type_nodes.values():
+            self.tree.item(t, open=True)
+
+    def _on_tree_double_click(self, _event) -> None:
+        """
+        Double click по модели -> делаем её текущей (показывает навигацию по Composite).
+        """
+        item_id = self.tree.focus()
+        if not item_id:
+            return
+        values = self.tree.item(item_id, "values")
+        if not values:
+            return
+        if values[0] != "MODEL":
+            return
+
+        # найдём модель по item_id
+        for eq_type, models in self._catalog.items():
+            for m in models:
+                if self._tree_model_nodes.get(id(m)) == item_id:
+                    self.current_equipment = m
+                    # синхронизируем флаги UI под выбранную модель
+                    self.var_online.set(bool(getattr(m, "use_online", False)))
+                    self.var_analytics.set(bool(getattr(m, "use_analytics", False)))
+                    self.var_use_proxy.set(bool(getattr(m, "use_proxy", False)))
+                    self.license_entry.delete(0, "end")
+                    self.license_entry.insert(0, getattr(m, "license_key", "") or "VALID-KEY")
+
+                    self.log(f"[COMPOSITE] selected model from tree: {eq_type} / {m.name}")
+                    self.refresh_all()
+                    return
+
+    # ---------------- Memento helpers (UI) ----------------
+    def _caretaker_index(self) -> int:
+        return int(getattr(self.caretaker, "_index", -1))
+
+    def _caretaker_history(self) -> list[EquipmentMemento]:
+        return list(getattr(self.caretaker, "_history", []))
+
+    def _sync_snapshot_list_from_caretaker(self) -> None:
+        """
+        Обновляет Listbox по текущей истории caretaker.
+        """
+        history = self._caretaker_history()
+        idx = self._caretaker_index()
+
+        self._snapshot_list = history
+
+        self.lst_snapshots.delete(0, "end")
+        for i, m in enumerate(history):
+            stamp = ""
+            # если хочешь — можно добавить timestamp в EquipmentMemento, но это не обязательно
+            label = f"{i:02d} | {m.equipment_type} | online={m.use_online} analytics={m.use_analytics} proxy={m.use_proxy}"
+            self.lst_snapshots.insert("end", label)
+
+        # выделим текущий индекс
+        if 0 <= idx < len(history):
+            self.lst_snapshots.selection_clear(0, "end")
+            self.lst_snapshots.selection_set(idx)
+            self.lst_snapshots.see(idx)
+            self._show_snapshot_details(history[idx])
+        else:
+            self.txt_memento.delete("1.0", "end")
+            self.txt_memento.insert("1.0", "Нет активного snapshot.")
+
+        info = self.caretaker.info() if hasattr(self.caretaker, "info") else ""
+        self.lbl_memento_info.config(text=info)
+
+    def _on_snapshot_select(self, _event) -> None:
+        sel = self.lst_snapshots.curselection()
+        if not sel:
+            return
+        i = int(sel[0])
+        if 0 <= i < len(self._snapshot_list):
+            self._show_snapshot_details(self._snapshot_list[i])
+
+    def _show_snapshot_details(self, m: EquipmentMemento) -> None:
+        self.txt_memento.delete("1.0", "end")
+        self.txt_memento.insert(
+            "1.0",
+            f"equipment_type: {m.equipment_type}\n"
+            f"specs: {m.specs}\n"
+            f"functions: {m.functions}\n\n"
+            f"base_software_title: {m.base_software_title}\n"
+            f"use_online: {m.use_online}\n"
+            f"use_analytics: {m.use_analytics}\n"
+            f"use_proxy: {m.use_proxy}\n"
+            f"license_key: {m.license_key}\n"
+        )
+
+    def restore_selected_snapshot(self) -> None:
+        if not self._editing_enabled:
+            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
+            return
+        if not self.current_equipment:
+            messagebox.showwarning("Нет объекта", "Сначала создай тренажёр.")
+            return
+        sel = self.lst_snapshots.curselection()
+        if not sel:
+            messagebox.showinfo("Memento", "Выбери snapshot в списке.")
+            return
+        i = int(sel[0])
+        if not (0 <= i < len(self._snapshot_list)):
+            return
+
+        # ⚠️ Важно: у caretakers нет метода "jump", поэтому:
+        # делаем восстановление напрямую выбранного snapshot (это наглядно для GUI).
+        self.restore_snapshot(self._snapshot_list[i])
+        self.log(f"[MEMENTO] restored selected snapshot index={i}")
+        # индекс caretakers при этом не меняем — это нормально для демо.
+        self._sync_snapshot_list_from_caretaker()
+
+    # =========================================================
+    # Actions
+    # =========================================================
     def on_create(self) -> None:
         if not self._editing_enabled:
-            messagebox.showinfo("VIEW режим", "В режиме VIEW создание/изменения запрещены.")
+            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
             return
 
         key = self.selected_key.get()
@@ -276,9 +516,9 @@ class App(tk.Tk):
             return
 
         self.current_equipment = factory.create()
-
         eq = self.current_equipment
-        # флаги расширений
+
+        # reset flags
         self.var_online.set(False)
         self.var_analytics.set(False)
         self.var_use_proxy.set(False)
@@ -290,43 +530,37 @@ class App(tk.Tk):
         eq.use_proxy = False
         eq.license_key = ""
 
-        # база от builder
+        # base from builder-created software
         eq.base_software_title = eq.software.name()
 
         self.rebuild_software_from_flags()
-        self.refresh_all()
 
-        # новый caretaker + первый снимок
+        # Composite: добавляем модель в каталог
+        self._add_to_catalog(eq)
+
+        # memento: новая история + первый снимок
         self.caretaker = Caretaker()
         self.caretaker.backup(self.create_memento_from_current())
-        self.refresh_memento_tab()
 
-        self.proxy_output.delete("1.0", "end")
+        self.log(f"[FACTORY] created: {eq.equipment_type} / {eq.name}")
+        self.refresh_all()
 
     def on_clear(self) -> None:
         self.current_equipment = None
-        self.factory_output.delete("1.0", "end")
-        self.builder_output.delete("1.0", "end")
-        self.decorator_output.delete("1.0", "end")
-        self.proxy_output.delete("1.0", "end")
-        self.memento_output.delete("1.0", "end")
+        self.txt_equipment.delete("1.0", "end")
+        self.txt_software.delete("1.0", "end")
+        self.txt_memento.delete("1.0", "end")
+        self.log("[SYSTEM] cleared current equipment")
+        self.refresh_bottom_bar()
 
-    def refresh_builder_tab(self) -> None:
-        self.builder_output.delete("1.0", "end")
+    def show_builder_log(self) -> None:
         if not self.current_equipment:
-            self.builder_output.insert("1.0", "Сначала создай тренажёр.")
+            messagebox.showinfo("Builder", "Сначала создай тренажёр.")
             return
         log = getattr(self.current_equipment, "build_log", None) or ["(лог сборки пуст)"]
-        self.builder_output.insert("1.0", "Лог Builder:\n" + "\n".join(f"- {x}" for x in log))
+        self.log("[BUILDER] log requested")
+        messagebox.showinfo("Builder Log", "\n".join(log))
 
-    def refresh_decorator_tab(self) -> None:
-        self.decorator_output.delete("1.0", "end")
-        if not self.current_equipment:
-            self.decorator_output.insert("1.0", "Сначала создай тренажёр.")
-            return
-        self.decorator_output.insert("1.0", self.current_equipment.summary())
-
-    # ---------------- Command handlers ----------------
     def on_apply_decorators_click(self) -> None:
         if not self._editing_enabled:
             messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
@@ -334,8 +568,15 @@ class App(tk.Tk):
         if not self.current_equipment:
             messagebox.showwarning("Нет объекта", "Сначала создай тренажёр.")
             return
-        cmd = ApplyDecoratorsCommand(self, online=bool(self.var_online.get()), analytics=bool(self.var_analytics.get()))
+
+        cmd = ApplyDecoratorsCommand(
+            self,
+            online=bool(self.var_online.get()),
+            analytics=bool(self.var_analytics.get()),
+        )
         cmd.execute()
+        self.log(f"[DECORATOR] applied: online={self.var_online.get()}, analytics={self.var_analytics.get()}")
+        self.refresh_all()
 
     def on_apply_proxy_click(self) -> None:
         if not self._editing_enabled:
@@ -344,13 +585,14 @@ class App(tk.Tk):
         if not self.current_equipment:
             messagebox.showwarning("Нет объекта", "Сначала создай тренажёр.")
             return
+
         enabled = bool(self.var_use_proxy.get())
         key = self.license_entry.get().strip()
+
         cmd = ApplyProxyCommand(self, enabled=enabled, license_key=key)
         cmd.execute()
-
-        self.proxy_output.delete("1.0", "end")
-        self.proxy_output.insert("1.0", f"Proxy applied: enabled={enabled}, key='{key}'\n")
+        self.log(f"[PROXY] applied: enabled={enabled}, key='{key}'")
+        self.refresh_all()
 
     def reset_software(self) -> None:
         if not self._editing_enabled:
@@ -362,8 +604,8 @@ class App(tk.Tk):
         key = self.selected_key.get()
         factory = self.registry.get(key)
         self.current_equipment = factory.create()
-
         eq = self.current_equipment
+
         eq.base_software_title = eq.software.name()
         eq.use_online = False
         eq.use_analytics = False
@@ -377,17 +619,21 @@ class App(tk.Tk):
         self.license_entry.insert(0, "VALID-KEY")
 
         self.rebuild_software_from_flags()
-        self.refresh_all()
 
+        # Composite: добавим и эту модель тоже
+        self._add_to_catalog(eq)
+
+        # Memento: новая история
         self.caretaker = Caretaker()
         self.caretaker.backup(self.create_memento_from_current())
-        self.refresh_memento_tab()
 
-    # ---------------- Proxy demo ----------------
+        self.log("[SYSTEM] reset software to base")
+        self.refresh_all()
+
     def run_software_operation(self) -> None:
-        self.proxy_output.delete("1.0", "end")
         if not self.current_equipment:
-            self.proxy_output.insert("1.0", "Сначала создай тренажёр.")
+            self.log("[OPERATION] no equipment")
+            messagebox.showinfo("operation()", "Сначала создай тренажёр.")
             return
 
         software = self.current_equipment.software
@@ -396,16 +642,98 @@ class App(tk.Tk):
         proxy_log = ""
         if isinstance(software, SoftwareProxy):
             log_text = "\n".join(f"- {x}" for x in getattr(software, "log", [])) or "(лог пуст)"
-            proxy_log = f"\n\nЛог Proxy:\n{log_text}"
+            proxy_log = "\n\nЛог Proxy:\n" + log_text
 
-        self.proxy_output.insert(
-            "1.0",
-            f"software.name(): {software.name()}\n\n"
-            f"operation():\n{result}"
-            f"{proxy_log}",
-        )
+        self.log(f"[OPERATION] software.name() = {software.name()}")
+        self.log("[OPERATION] executed")
 
-    # ---------------- Memento ----------------
+        messagebox.showinfo("operation()", f"{result}{proxy_log}")
+        self.refresh_all()
+
+    # =========================================================
+    # AppContext API for Commands (Command expects these)
+    # =========================================================
+    def set_decorators_state(self, online: bool, analytics: bool) -> None:
+        if not self.current_equipment:
+            return
+        eq = self.current_equipment
+        eq.use_online = bool(online)
+        eq.use_analytics = bool(analytics)
+
+        self.var_online.set(eq.use_online)
+        self.var_analytics.set(eq.use_analytics)
+
+        self.rebuild_software_from_flags()
+
+        # обновим дерево композита (строчка у модели содержит software.name())
+        self._rebuild_tree()
+
+        self.refresh_all()
+
+    def set_proxy_state(self, enabled: bool, license_key: str) -> None:
+        if not self.current_equipment:
+            return
+        eq = self.current_equipment
+        eq.use_proxy = bool(enabled)
+        eq.license_key = (license_key or "").strip()
+
+        self.var_use_proxy.set(eq.use_proxy)
+        self.license_entry.delete(0, "end")
+        self.license_entry.insert(0, eq.license_key or "VALID-KEY")
+
+        self.rebuild_software_from_flags()
+
+        self._rebuild_tree()
+        self.refresh_all()
+
+    def has_equipment(self) -> bool:
+        return self.current_equipment is not None
+
+    def get_snapshot(self):
+        return self.create_memento_from_current()
+
+    def push_snapshot(self, snapshot):
+        if not self._editing_enabled:
+            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
+            return
+        self.caretaker.backup(snapshot)
+        self.log("[MEMENTO] snapshot saved")
+        self.refresh_all()
+
+    def undo_snapshot(self):
+        if not self._editing_enabled:
+            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
+            return None
+        m = self.caretaker.undo()
+        if m is None:
+            messagebox.showinfo("Undo", "Больше некуда откатываться.")
+            self.log("[MEMENTO] undo failed (no history)")
+        else:
+            self.log("[MEMENTO] undo")
+        return m
+
+    def redo_snapshot(self):
+        if not self._editing_enabled:
+            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
+            return None
+        m = self.caretaker.redo()
+        if m is None:
+            messagebox.showinfo("Redo", "Больше некуда возвращаться.")
+            self.log("[MEMENTO] redo failed (no future)")
+        else:
+            self.log("[MEMENTO] redo")
+        return m
+
+    def restore_snapshot(self, snapshot):
+        if not self.current_equipment:
+            return
+        self.restore_from_memento(snapshot)
+        self.log("[MEMENTO] snapshot restored")
+        self.refresh_all()
+
+    # =========================================================
+    # Memento create/restore
+    # =========================================================
     def create_memento_from_current(self) -> EquipmentMemento:
         eq = self.current_equipment
         assert eq is not None
@@ -443,91 +771,42 @@ class App(tk.Tk):
 
         self.rebuild_software_from_flags()
 
-    def refresh_memento_tab(self) -> None:
-        self.memento_output.delete("1.0", "end")
-        if not self.current_equipment:
-            self.memento_output.insert("1.0", "Сначала создай тренажёр.")
-            return
-
-        eq = self.current_equipment
-        self.memento_output.insert(
-            "1.0",
-            f"{self.caretaker.info()}\n\n"
-            f"Текущее состояние:\n"
-            f"- base_software_title: {eq.base_software_title}\n"
-            f"- online: {eq.use_online}\n"
-            f"- analytics: {eq.use_analytics}\n"
-            f"- proxy: {eq.use_proxy}\n"
-            f"- license_key: {eq.license_key}\n\n"
-            f"Summary:\n{eq.summary()}",
-        )
-
-    # ---------------- AppContext API for Commands ----------------
-    def has_equipment(self) -> bool:
-        return self.current_equipment is not None
-
-    def get_snapshot(self):
-        return self.create_memento_from_current()
-
-    def restore_snapshot(self, snapshot):
-        if not self.current_equipment:
-            return
-        self.restore_from_memento(snapshot)
-        self.refresh_all()
-
-    def push_snapshot(self, snapshot):
-        if not self._editing_enabled:
-            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
-            return
-        self.caretaker.backup(snapshot)
-        self.refresh_memento_tab()
-
-    def undo_snapshot(self):
-        if not self._editing_enabled:
-            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
-            return None
-        return self.caretaker.undo()
-
-    def redo_snapshot(self):
-        if not self._editing_enabled:
-            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
-            return None
-        return self.caretaker.redo()
-
+    # =========================================================
+    # Refresh
+    # =========================================================
     def refresh_all(self) -> None:
-        if self.current_equipment:
-            self.factory_output.delete("1.0", "end")
-            self.factory_output.insert("1.0", self.current_equipment.summary())
-        self.refresh_builder_tab()
-        self.refresh_decorator_tab()
-        self.refresh_memento_tab()
+        # center cards
+        if not self.current_equipment:
+            self.txt_equipment.delete("1.0", "end")
+            self.txt_equipment.insert("1.0", "Нет созданного тренажёра.\nСоздай его через Factory слева.")
+            self.txt_software.delete("1.0", "end")
+            self.txt_software.insert("1.0", "Цепочка ПО будет показана после создания тренажёра.")
 
-    def set_decorators_state(self, online: bool, analytics: bool) -> None:
-        if not self._editing_enabled:
-            return
-        eq = self.current_equipment
-        if not eq:
-            return
-        eq.use_online = online
-        eq.use_analytics = analytics
-        self.var_online.set(online)
-        self.var_analytics.set(analytics)
-        self.rebuild_software_from_flags()
-        self.refresh_all()
+            self.txt_memento.delete("1.0", "end")
+            self.txt_memento.insert("1.0", "Нет snapshot (создай тренажёр и нажми Save Snapshot).")
 
-    def set_proxy_state(self, enabled: bool, license_key: str) -> None:
-        if not self._editing_enabled:
+            self._sync_snapshot_list_from_caretaker()
+            self.refresh_bottom_bar()
             return
+
         eq = self.current_equipment
-        if not eq:
-            return
-        eq.use_proxy = enabled
-        eq.license_key = license_key
-        self.var_use_proxy.set(enabled)
-        self.license_entry.delete(0, "end")
-        self.license_entry.insert(0, license_key or "VALID-KEY")
-        self.rebuild_software_from_flags()
-        self.refresh_all()
+
+        self.txt_equipment.delete("1.0", "end")
+        self.txt_equipment.insert("1.0", eq.summary())
+
+        self.txt_software.delete("1.0", "end")
+        self.txt_software.insert("1.0", self.software_chain_text())
+
+        # memento UI
+        self._sync_snapshot_list_from_caretaker()
+
+        self.refresh_bottom_bar()
+
+    def refresh_bottom_bar(self) -> None:
+        state_name = self.system_state.name() if self.system_state else "?"
+        eq_name = f"{self.current_equipment.equipment_type}/{self.current_equipment.name}" if self.current_equipment else "—"
+        hist = self.caretaker.info() if hasattr(self.caretaker, "info") else ""
+        self.bottom_bar.configure(text=f"Mode: {state_name} | Current: {eq_name} | {hist}")
 
 
 if __name__ == "__main__":
