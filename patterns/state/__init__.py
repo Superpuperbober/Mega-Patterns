@@ -1,17 +1,3 @@
-from .software_state import (
-    SoftwareState,
-    StatefulSoftware,
-    SetupState,
-    IdleState,
-    TrainingState,
-    LockedState,
-)
+from .system_state import SystemState, EditState, ViewState, SystemContext
 
-__all__ = [
-    "SoftwareState",
-    "StatefulSoftware",
-    "SetupState",
-    "IdleState",
-    "TrainingState",
-    "LockedState",
-]
+__all__ = ["SystemState", "EditState", "ViewState", "SystemContext"]
