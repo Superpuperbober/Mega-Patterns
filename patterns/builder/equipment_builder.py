@@ -85,6 +85,17 @@ class Director:
         self._builder.set_software("Bike Software")
         return self._builder.build()
 
+    def make_gyri(self) -> EquipmentModel:
+        self._builder.reset()
+        self._builder.set_type("Гиря")  # это будет equipment_type
+        self._builder.set_name("гиря 16кг")  # добавь метод set_name
+        self._builder.add_spec("max_resistance", 20)
+        self._builder.add_spec("has_pulse_sensor", True)
+        self._builder.add_function("Тренировка по пульсу")
+        self._builder.add_function("Интервалы")
+        self._builder.set_software("Gyri Software")
+        return self._builder.build()
+
     def make_treadmill(self) -> EquipmentModel:
         self._builder.reset()
         self._builder.set_type("Беговая дорожка")

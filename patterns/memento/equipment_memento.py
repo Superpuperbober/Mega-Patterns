@@ -1,11 +1,16 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
-class EquipmentMemento:
+class ModelMemento:
+    # чтобы уметь пересоздать объект через фабрику
+    factory_key: str
+
     equipment_type: str
+    name: str
     specs: Dict[str, Any]
     functions: List[str]
 
@@ -15,8 +20,18 @@ class EquipmentMemento:
     use_proxy: bool
     license_key: str
 
-    # ✅ новое поле для паттерна State
+    # ✅ поле для паттерна State (как у тебя было)
     software_state_name: str = "IDLE"
+
+
+@dataclass(frozen=True)
+class EquipmentMemento:
+    """
+    Теперь это Memento уровня приложения:
+    хранит ВСЕ дерево catalog: type -> models.
+    """
+    catalog: Dict[str, List[ModelMemento]]
+    current_ref: Optional[Tuple[str, int]] = None  # (equipment_type, index in catalog[type])
 
 
 class Caretaker:

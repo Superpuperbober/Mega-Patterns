@@ -28,6 +28,11 @@ class RowingMachineFactory(EquipmentFactory):
         director = Director(ConcreteEquipmentBuilder())
         return director.make_rowing()
 
+class GyriFactory(EquipmentFactory):
+    def create(self) -> EquipmentModel:
+        director = Director(ConcreteEquipmentBuilder())
+        return director.make_gyri()
+
 
 class FactoryRegistry:
     """Реестр фабрик: GUI работает с ключами и интерфейсом фабрики."""

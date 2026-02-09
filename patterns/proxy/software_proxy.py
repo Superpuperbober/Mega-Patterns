@@ -19,7 +19,7 @@ class ProtectedRemoteSoftware:
         return self._title
 
     def operation(self) -> str:
-        return "Реальный модуль ПО выполнен (тяжёлая логика/сеть/драйверы)."
+        return "Реальный модуль ПО выполнен."
 
 
 class SoftwareProxy:

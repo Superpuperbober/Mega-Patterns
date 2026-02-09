@@ -1,12 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from patterns.factory import FactoryRegistry, BikeFactory, TreadmillFactory, RowingMachineFactory
+from patterns.factory import FactoryRegistry, BikeFactory, TreadmillFactory, RowingMachineFactory,GyriFactory
 from patterns.decorator import OnlineSoftwareDecorator, AnalyticsDecorator
 from patterns.proxy import SoftwareProxy
-from patterns.memento import EquipmentMemento, Caretaker
+from patterns.memento import EquipmentMemento, ModelMemento, Caretaker
 
-# State (как в документе)
 from patterns.state import SystemState, EditState, ViewState
 
 from patterns.command import (
@@ -28,25 +27,31 @@ class App(tk.Tk):
         self.geometry("1200x740")
         self.minsize(1500, 1000)
 
-
+        # ✅ Красивые цвета (dark + neon accents, читабельно)
         self.COL = {
-            "bg": "#0f172a",          # slate-900
-            "panel": "#111827",       # gray-900
-            "card": "#0b1220",
-            "text": "#e5e7eb",        # gray-200
-            "muted": "#9ca3af",       # gray-400
-            "border": "#1f2937",      # gray-800
-            "factory": "#60a5fa",     # blue-400
-            "builder": "#c084fc",     # purple-400
-            "decorator": "#34d399",   # green-400
-            "proxy": "#fb923c",       # orange-400
-            "memento": "#22d3ee",     # cyan-400
-            "state": "#a3a3a3",       # neutral-400
-            "error": "#f87171",       # red-400
-            "success": "#4ade80",     # green-300
-            "warn": "#fbbf24",        # amber-400
-        }
+            # Base
+            "bg": "#0B1220",
+            "panel": "#0F1A2B",
+            "card": "#101F33",
+            "border": "#22314A",
 
+            # Text
+            "text": "#FFA07A",
+            "muted": "#9AA9C3",
+
+            # Accents
+            "factory": "#60A5FA",     # blue
+            "builder": "#A78BFA",     # purple
+            "decorator": "#34D399",   # green
+            "proxy": "#FB923C",       # orange
+            "memento": "#22D3EE",     # cyan
+            "state": "#94A3B8",       # slate
+
+            # Status
+            "error": "#FB7185",       # rose
+            "success": "#4ADE80",     # green
+            "warn": "#FBBF24",        # amber
+        }
 
         self.current_equipment: EquipmentModel | None = None
 
@@ -55,40 +60,34 @@ class App(tk.Tk):
         self._tree_type_nodes: dict[str, str] = {}
         self._tree_model_nodes: dict[int, str] = {}
 
-
         self._snapshot_list: list[EquipmentMemento] = []
-
 
         self.registry = FactoryRegistry()
         self.registry.register("bike", BikeFactory())
         self.registry.register("treadmill", TreadmillFactory())
         self.registry.register("rowing", RowingMachineFactory())
+        self.registry.register("gyri", GyriFactory())
 
         self.caretaker = Caretaker()
-
 
         self.invoker = Invoker()
         self.invoker.register("save_snapshot", SaveSnapshotCommand(self))
         self.invoker.register("undo", UndoCommand(self))
         self.invoker.register("redo", RedoCommand(self))
 
-
         self._editing_enabled: bool = True
         self.system_state: SystemState = EditState(self)
 
-
-
         self._editable_widgets: list[tk.Widget] = []
 
-
         self._apply_ttk_theme()
-
-        # Build UI
         self._build_ui()
         self.system_state.show_funcs()
         self.refresh_all()
 
-
+    # -----------------------------
+    # Theme / styles
+    # -----------------------------
     def _apply_ttk_theme(self) -> None:
         style = ttk.Style(self)
         try:
@@ -96,20 +95,56 @@ class App(tk.Tk):
         except tk.TclError:
             pass
 
+        # Base ttk
+        style.configure(".", foreground=self.COL["text"])
         style.configure("TFrame", background=self.COL["bg"])
         style.configure("TLabelframe", background=self.COL["bg"], foreground=self.COL["text"])
         style.configure("TLabelframe.Label", background=self.COL["bg"], foreground=self.COL["text"])
         style.configure("TLabel", background=self.COL["bg"], foreground=self.COL["text"])
-        style.configure("TButton", padding=7)
+        style.configure("TButton", padding=7, foreground=self.COL["text"])
         style.configure("TCheckbutton", background=self.COL["bg"], foreground=self.COL["text"])
         style.map("TCheckbutton", foreground=[("disabled", self.COL["muted"])])
-        style.configure("TCombobox", padding=4)
+        style.configure("TCombobox", padding=4, foreground=self.COL["text"])
 
+        # ✅ Treeview: фон/текст/заголовки (чтобы не сливалось)
+        style.configure(
+            "Treeview",
+            background=self.COL["panel"],
+            fieldbackground=self.COL["panel"],
+            foreground=self.COL["text"],
+            bordercolor=self.COL["border"],
+            lightcolor=self.COL["border"],
+            darkcolor=self.COL["border"],
+            rowheight=24,
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=self.COL["card"],
+            foreground=self.COL["text"],
+            relief="flat",
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", self.COL["memento"])],
+            foreground=[("selected", "#000000")],
+        )
+        style.configure(
+            "TButton",
+            padding=7,
+            foreground=self.COL["text"],
+            background=self.COL["card"],
+        )
+        style.map(
+            "TButton",
+            background=[("active", self.COL["panel"]), ("pressed", self.COL["border"])],
+        )
 
+    # -----------------------------
+    # UI build
+    # -----------------------------
     def _build_ui(self) -> None:
         self.configure(bg=self.COL["bg"])
 
-        # Header
         header = ttk.Frame(self, padding=(12, 10))
         header.pack(fill="x")
 
@@ -123,7 +158,6 @@ class App(tk.Tk):
         ttk.Button(header, text="EDIT", command=lambda: self.set_state(EditState)).pack(side="right", padx=4)
         ttk.Button(header, text="VIEW", command=lambda: self.set_state(ViewState)).pack(side="right", padx=4)
 
-
         self.status_label = tk.Label(
             self,
             text="",
@@ -133,7 +167,6 @@ class App(tk.Tk):
             padx=12,
         )
         self.status_label.pack(fill="x")
-
 
         body = ttk.Frame(self, padding=12)
         body.pack(fill="both", expand=True)
@@ -147,7 +180,6 @@ class App(tk.Tk):
         self._build_center_info(body)
         self._build_right_panel(body)
 
-        # Bottom bar
         self.bottom_bar = tk.Label(
             self,
             text="",
@@ -164,13 +196,12 @@ class App(tk.Tk):
         lf.pack(fill="x", pady=8)
         return lf
 
-
     def _build_left_controls(self, parent: ttk.Frame) -> None:
         left = ttk.Frame(parent)
         left.grid(row=0, column=0, sticky="ns", padx=(0, 10))
 
-        # FACTORY
-        c1 = self._card(left, "1) Factory")
+        # 1) FACTORY
+        c1 = self._card(left, "1) Factory / Prototype")
         ttk.Label(c1, text="Тип тренажёра:").pack(anchor="w")
 
         self.selected_key = tk.StringVar(value=self.registry.keys()[0])
@@ -184,14 +215,19 @@ class App(tk.Tk):
         btn_create.pack(fill="x")
         self._editable_widgets.append(btn_create)
 
+        # ✅ Prototype button
+        btn_clone = ttk.Button(c1, text="Clone selected (Prototype)", command=self.on_clone_selected)
+        btn_clone.pack(fill="x", pady=(6, 0))
+        self._editable_widgets.append(btn_clone)
+
         ttk.Button(c1, text="Clear current", command=self.on_clear).pack(fill="x", pady=(6, 0))
 
-
+        # 2) BUILDER
         c2 = self._card(left, "2) Builder")
         ttk.Label(c2, text="Лог шагов сборки:").pack(anchor="w")
         ttk.Button(c2, text="Show Builder Log", command=self.show_builder_log).pack(fill="x", pady=(6, 0))
 
-
+        # 3) DECORATOR
         c3 = self._card(left, "3) Decorator")
         self.var_online = tk.BooleanVar(value=False)
         self.var_analytics = tk.BooleanVar(value=False)
@@ -211,7 +247,7 @@ class App(tk.Tk):
         btn_reset.pack(fill="x", pady=(6, 0))
         self._editable_widgets.append(btn_reset)
 
-
+        # 4) PROXY
         c4 = self._card(left, "4) Proxy")
         self.var_use_proxy = tk.BooleanVar(value=False)
         cbp = ttk.Checkbutton(c4, text="Enable Proxy", variable=self.var_use_proxy)
@@ -230,8 +266,8 @@ class App(tk.Tk):
 
         ttk.Button(c4, text="Run operation()", command=self.run_software_operation).pack(fill="x", pady=(6, 0))
 
-
-        c5 = self._card(left, "5) Memento")
+        # 5) MEMENTO
+        c5 = self._card(left, "5) Memento (Tree)")
         btn_save = ttk.Button(c5, text="Save Snapshot", command=lambda: self.invoker.execute("save_snapshot"))
         btn_undo = ttk.Button(c5, text="Undo", command=lambda: self.invoker.execute("undo"))
         btn_redo = ttk.Button(c5, text="Redo", command=lambda: self.invoker.execute("redo"))
@@ -242,7 +278,6 @@ class App(tk.Tk):
 
         self._editable_widgets.extend([btn_save, btn_undo, btn_redo])
 
-
     def _build_center_info(self, parent: ttk.Frame) -> None:
         center = ttk.Frame(parent)
         center.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
@@ -251,24 +286,37 @@ class App(tk.Tk):
         center.rowconfigure(2, weight=1)
         center.columnconfigure(0, weight=1)
 
-
         eq_card = ttk.Labelframe(center, text="Current Equipment (Product)", padding=10)
         eq_card.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
         eq_card.rowconfigure(0, weight=1)
         eq_card.columnconfigure(0, weight=1)
 
-        self.txt_equipment = tk.Text(eq_card, wrap="word", bg=self.COL["panel"], fg=self.COL["text"], insertbackground=self.COL["text"])
+        self.txt_equipment = tk.Text(
+            eq_card,
+            wrap="word",
+            bg=self.COL["panel"],
+            fg=self.COL["text"],
+            insertbackground=self.COL["text"],
+            highlightthickness=1,
+            highlightbackground=self.COL["border"],
+        )
         self.txt_equipment.grid(row=0, column=0, sticky="nsew")
-
 
         sw_card = ttk.Labelframe(center, text="Software chain (Decorator/Proxy)", padding=10)
         sw_card.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         sw_card.rowconfigure(0, weight=1)
         sw_card.columnconfigure(0, weight=1)
 
-        self.txt_software = tk.Text(sw_card, wrap="word", bg=self.COL["panel"], fg=self.COL["text"], insertbackground=self.COL["text"])
+        self.txt_software = tk.Text(
+            sw_card,
+            wrap="word",
+            bg=self.COL["panel"],
+            fg=self.COL["text"],
+            insertbackground=self.COL["text"],
+            highlightthickness=1,
+            highlightbackground=self.COL["border"],
+        )
         self.txt_software.grid(row=0, column=0, sticky="nsew")
-
 
         mem_card = ttk.Labelframe(center, text="Memento (Snapshots)", padding=10)
         mem_card.grid(row=2, column=0, sticky="nsew")
@@ -280,7 +328,6 @@ class App(tk.Tk):
         top.columnconfigure(0, weight=1)
         top.columnconfigure(1, weight=1)
         top.rowconfigure(0, weight=1)
-
 
         left_box = ttk.Frame(top)
         left_box.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
@@ -306,7 +353,6 @@ class App(tk.Tk):
         btn_restore.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         self._editable_widgets.append(btn_restore)
 
-
         right_box = ttk.Frame(top)
         right_box.grid(row=0, column=1, sticky="nsew")
         right_box.rowconfigure(1, weight=1)
@@ -321,12 +367,13 @@ class App(tk.Tk):
             bg=self.COL["panel"],
             fg=self.COL["text"],
             insertbackground=self.COL["text"],
+            highlightthickness=1,
+            highlightbackground=self.COL["border"],
         )
         self.txt_memento.grid(row=1, column=0, sticky="nsew")
 
         self.lbl_memento_info = tk.Label(mem_card, text="", bg=self.COL["bg"], fg=self.COL["muted"], anchor="w")
         self.lbl_memento_info.grid(row=1, column=0, sticky="w", pady=(8, 0))
-
 
     def _build_right_panel(self, parent: ttk.Frame) -> None:
         right = ttk.Frame(parent)
@@ -334,7 +381,6 @@ class App(tk.Tk):
         right.rowconfigure(0, weight=1)
         right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
-
 
         comp_card = ttk.Labelframe(right, text="Composite Catalog (Type → Models)", padding=10)
         comp_card.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
@@ -348,19 +394,26 @@ class App(tk.Tk):
         self.tree.grid(row=0, column=0, sticky="nsew")
         self.tree.bind("<Double-1>", self._on_tree_double_click)
 
-
+        # ✅ Цвета в компоновщике: папки TYPE и модели MODEL
         self.tree.tag_configure("TYPE", foreground=self.COL["factory"])
         self.tree.tag_configure("MODEL", foreground=self.COL["text"])
-
+        self.tree.tag_configure("CLONE", foreground=self.COL["builder"])  # клоны выделяем фиолетовым
 
         log_card = ttk.Labelframe(right, text="Action Log (colored)", padding=10)
         log_card.grid(row=1, column=0, sticky="nsew")
         log_card.rowconfigure(0, weight=1)
         log_card.columnconfigure(0, weight=1)
 
-        self.txt_log = tk.Text(log_card, wrap="word", bg=self.COL["panel"], fg=self.COL["text"], insertbackground=self.COL["text"])
+        self.txt_log = tk.Text(
+            log_card,
+            wrap="word",
+            bg=self.COL["panel"],
+            fg=self.COL["text"],
+            insertbackground=self.COL["text"],
+            highlightthickness=1,
+            highlightbackground=self.COL["border"],
+        )
         self.txt_log.grid(row=0, column=0, sticky="nsew")
-
 
         self.txt_log.tag_config("FACTORY", foreground=self.COL["factory"])
         self.txt_log.tag_config("BUILDER", foreground=self.COL["builder"])
@@ -371,24 +424,20 @@ class App(tk.Tk):
         self.txt_log.tag_config("WARN", foreground=self.COL["warn"])
         self.txt_log.tag_config("ERROR", foreground=self.COL["error"])
         self.txt_log.tag_config("OK", foreground=self.COL["success"])
+        self.txt_log.tag_config("PROTOTYPE", foreground=self.COL["builder"])
 
-
+    # -----------------------------
+    # Helpers / state
+    # -----------------------------
     def log(self, text: str, tag: str = "STATE") -> None:
         self.txt_log.insert("end", text + "\n", (tag,))
         self.txt_log.see("end")
-
 
     def set_state(self, state_cls: type[SystemState]) -> None:
         self.system_state = state_cls(self)
         self.system_state.show_funcs()
         self.log(f"[STATE] -> {self.system_state.name()}", "STATE")
         self.refresh_bottom_bar()
-
-    def edit(self):
-        self.state.edit(self)
-
-    def view(self):
-        self.state.view(self)
 
     def enable_editing(self, enabled: bool) -> None:
         self._editing_enabled = enabled
@@ -400,15 +449,13 @@ class App(tk.Tk):
                 pass
 
     def set_status(self, text: str) -> None:
-        # color status line based on mode
         mode = self.system_state.name() if self.system_state else "?"
-        if mode.upper() == "EDIT":
-            fg = self.COL["success"]
-        else:
-            fg = self.COL["warn"]
+        fg = self.COL["success"] if mode.upper() == "EDIT" else self.COL["warn"]
         self.status_label.configure(text=text, fg=fg)
 
-
+    # -----------------------------
+    # Software reconstruction
+    # -----------------------------
     def rebuild_software_from_flags(self) -> None:
         """BaseSoftware -> Decorators -> Proxy"""
         eq = self.current_equipment
@@ -450,11 +497,14 @@ class App(tk.Tk):
             + "Подсказка: нажми 'Run operation()' чтобы увидеть поведение."
         )
 
+    # -----------------------------
+    # Composite catalog
+    # -----------------------------
     def _add_to_catalog(self, model: EquipmentModel) -> None:
         eq_type = getattr(model, "equipment_type", "") or "UnknownType"
         self._catalog.setdefault(eq_type, [])
-        if all(id(x) != id(model) for x in self._catalog[eq_type]):
-            self._catalog[eq_type].append(model)
+        # добавляем именно объект (копии не сливаем)
+        self._catalog[eq_type].append(model)
         self._rebuild_tree()
 
     def _rebuild_tree(self) -> None:
@@ -470,7 +520,8 @@ class App(tk.Tk):
 
             for m in self._catalog[eq_type]:
                 label = f"{getattr(m, 'name', 'Model')}  (software: {m.software.name()})"
-                mid = self.tree.insert(type_id, "end", text=label, values=("MODEL",), tags=("MODEL",))
+                tag = "CLONE" if "(Копия" in getattr(m, "name", "") or "(Copy" in getattr(m, "name", "") else "MODEL"
+                mid = self.tree.insert(type_id, "end", text=label, values=("MODEL",), tags=(tag,))
                 self._tree_model_nodes[id(m)] = mid
 
         for t in self._tree_type_nodes.values():
@@ -499,15 +550,44 @@ class App(tk.Tk):
                     self.refresh_all()
                     return
 
+    # -----------------------------
+    # Prototype (clone)
+    # -----------------------------
+    def on_clone_selected(self) -> None:
+        if not self._editing_enabled:
+            messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
+            return
+        if not self.current_equipment:
+            messagebox.showinfo("Prototype", "Сначала выбери модель (двойной клик в дереве) или создай тренажёр.")
+            return
 
+        cloned = self.current_equipment.clone()
+        cloned.equipment_type = self.current_equipment.equipment_type
+
+        # если используешь factory_key для memento restore — сохраняем
+        setattr(cloned, "factory_key", getattr(self.current_equipment, "factory_key", self.selected_key.get()))
+
+        self._add_to_catalog(cloned)
+        self.current_equipment = cloned
+
+        self.var_online.set(bool(getattr(cloned, "use_online", False)))
+        self.var_analytics.set(bool(getattr(cloned, "use_analytics", False)))
+        self.var_use_proxy.set(bool(getattr(cloned, "use_proxy", False)))
+        self.license_entry.delete(0, "end")
+        self.license_entry.insert(0, getattr(cloned, "license_key", "") or "VALID-KEY")
+
+        self.log(f"[PROTOTYPE] cloned: {cloned.equipment_type} / {cloned.name}", "PROTOTYPE")
+        self.refresh_all()
+
+    # -----------------------------
+    # Memento plumbing (your caretaker helpers)
+    # -----------------------------
     def _caretaker_history(self) -> list[EquipmentMemento]:
-        # Try common names
         for name in ("_history", "history", "snapshots", "_snapshots"):
             if hasattr(self.caretaker, name):
                 val = getattr(self.caretaker, name)
                 if isinstance(val, list):
                     return val
-        # Try methods
         for m in ("get_history", "history_list", "all"):
             if hasattr(self.caretaker, m) and callable(getattr(self.caretaker, m)):
                 try:
@@ -525,14 +605,12 @@ class App(tk.Tk):
                     return int(getattr(self.caretaker, name))
                 except Exception:
                     pass
-        # if caretaker has method current_index()
         if hasattr(self.caretaker, "current_index") and callable(getattr(self.caretaker, "current_index")):
             try:
                 return int(self.caretaker.current_index())
             except Exception:
                 pass
         return -1
-
 
     def _sync_snapshot_list_from_caretaker(self) -> None:
         history = list(self._caretaker_history())
@@ -542,8 +620,10 @@ class App(tk.Tk):
 
         self.lst_snapshots.delete(0, "end")
         for i, m in enumerate(history):
-            label = f"{i:02d} | {m.equipment_type} | online={m.use_online} analytics={m.use_analytics} proxy={m.use_proxy}"
-            self.lst_snapshots.insert("end", label)
+            types_count = len(m.catalog)
+            models_count = sum(len(v) for v in m.catalog.values())
+            cur = f"{m.current_ref[0]}[{m.current_ref[1]}]" if m.current_ref else "—"
+            self.lst_snapshots.insert("end", f"{i:02d} | types={types_count} models={models_count} | current={cur}")
 
         if 0 <= idx < len(history):
             self.lst_snapshots.selection_clear(0, "end")
@@ -567,24 +647,23 @@ class App(tk.Tk):
 
     def _show_snapshot_details(self, m: EquipmentMemento) -> None:
         self.txt_memento.delete("1.0", "end")
-        self.txt_memento.insert(
-            "1.0",
-            f"equipment_type: {m.equipment_type}\n"
-            f"specs: {m.specs}\n"
-            f"functions: {m.functions}\n\n"
-            f"base_software_title: {m.base_software_title}\n"
-            f"use_online: {m.use_online}\n"
-            f"use_analytics: {m.use_analytics}\n"
-            f"use_proxy: {m.use_proxy}\n"
-            f"license_key: {m.license_key}\n"
-        )
+        lines = []
+        lines.append(f"types: {len(m.catalog)}")
+        lines.append(f"models: {sum(len(v) for v in m.catalog.values())}")
+        lines.append(f"current_ref: {m.current_ref}")
+        lines.append("")
+        for t in sorted(m.catalog.keys()):
+            lines.append(f"[{t}] ({len(m.catalog[t])})")
+            for i, s in enumerate(m.catalog[t]):
+                lines.append(
+                    f"  - {i}: {s.name} | online={s.use_online} analytics={s.use_analytics} proxy={s.use_proxy} "
+                    f"| state={s.software_state_name}"
+                )
+        self.txt_memento.insert("1.0", "\n".join(lines))
 
     def restore_selected_snapshot(self) -> None:
         if not self._editing_enabled:
             messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
-            return
-        if not self.current_equipment:
-            messagebox.showwarning("Нет объекта", "Сначала создай тренажёр.")
             return
         sel = self.lst_snapshots.curselection()
         if not sel:
@@ -598,7 +677,9 @@ class App(tk.Tk):
         self.log(f"[MEMENTO] restored selected snapshot index={i}", "MEMENTO")
         self._sync_snapshot_list_from_caretaker()
 
-
+    # -----------------------------
+    # Actions
+    # -----------------------------
     def on_create(self) -> None:
         if not self._editing_enabled:
             messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
@@ -615,6 +696,8 @@ class App(tk.Tk):
         self.current_equipment = factory.create()
         eq = self.current_equipment
 
+        # чтобы memento мог пересоздавать объект фабрикой
+        setattr(eq, "factory_key", key)
 
         self.var_online.set(False)
         self.var_analytics.set(False)
@@ -630,12 +713,10 @@ class App(tk.Tk):
         eq.base_software_title = eq.software.name()
         self.rebuild_software_from_flags()
 
-
         self._add_to_catalog(eq)
 
-
-        self.caretaker = Caretaker()
-        self.caretaker.backup(self.create_memento_from_current())
+        # ✅ ВАЖНО: не пересоздаём caretaker, иначе теряешь историю снимков
+        # self.caretaker.backup(self.create_memento_from_current())  # если хочешь автоснапшот при create — раскомментируй
 
         self.log(f"[FACTORY] created: {eq.equipment_type} / {eq.name}", "FACTORY")
         self.refresh_all()
@@ -703,6 +784,8 @@ class App(tk.Tk):
         self.current_equipment = factory.create()
         eq = self.current_equipment
 
+        setattr(eq, "factory_key", key)
+
         eq.base_software_title = eq.software.name()
         eq.use_online = False
         eq.use_analytics = False
@@ -716,11 +799,7 @@ class App(tk.Tk):
         self.license_entry.insert(0, "VALID-KEY")
 
         self.rebuild_software_from_flags()
-
         self._add_to_catalog(eq)
-
-        self.caretaker = Caretaker()
-        self.caretaker.backup(self.create_memento_from_current())
 
         self.log("[SYSTEM] reset to base (Factory+Builder)", "FACTORY")
         self.refresh_all()
@@ -750,9 +829,9 @@ class App(tk.Tk):
         messagebox.showinfo("operation()", f"{result}{proxy_log}")
         self.refresh_all()
 
-    # =========================================================
-    # AppContext API for Commands (Command expects these)
-    # =========================================================
+    # -----------------------------
+    # Command API expected by patterns.command
+    # -----------------------------
     def set_decorators_state(self, online: bool, analytics: bool) -> None:
         if not self.current_equipment:
             return
@@ -793,7 +872,7 @@ class App(tk.Tk):
             messagebox.showinfo("VIEW режим", "В режиме VIEW изменения запрещены.")
             return
         self.caretaker.backup(snapshot)
-        self.log("[MEMENTO] snapshot saved", "MEMENTO")
+        self.log("[MEMENTO] snapshot saved (tree)", "MEMENTO")
         self.refresh_all()
 
     def undo_snapshot(self):
@@ -805,7 +884,7 @@ class App(tk.Tk):
             messagebox.showinfo("Undo", "Больше некуда откатываться.")
             self.log("[MEMENTO] undo failed (no history)", "WARN")
         else:
-            self.log("[MEMENTO] undo", "MEMENTO")
+            self.log("[MEMENTO] undo (tree)", "MEMENTO")
         return m
 
     def redo_snapshot(self):
@@ -817,58 +896,97 @@ class App(tk.Tk):
             messagebox.showinfo("Redo", "Больше некуда возвращаться.")
             self.log("[MEMENTO] redo failed (no future)", "WARN")
         else:
-            self.log("[MEMENTO] redo", "MEMENTO")
+            self.log("[MEMENTO] redo (tree)", "MEMENTO")
         return m
 
     def restore_snapshot(self, snapshot):
-        if not self.current_equipment:
-            return
         self.restore_from_memento(snapshot)
-        self.log("[MEMENTO] snapshot restored", "MEMENTO")
+        self.log("[MEMENTO] snapshot restored (tree)", "MEMENTO")
         self.refresh_all()
 
-    # =========================================================
-    # Memento create/restore
-    # =========================================================
+    # -----------------------------
+    # Memento (TREE) create/restore
+    # -----------------------------
     def create_memento_from_current(self) -> EquipmentMemento:
-        eq = self.current_equipment
-        assert eq is not None
-        return EquipmentMemento(
-            equipment_type=eq.equipment_type,
-            specs=dict(eq.specs),
-            functions=list(eq.functions),
-            base_software_title=eq.base_software_title,
-            use_online=eq.use_online,
-            use_analytics=eq.use_analytics,
-            use_proxy=eq.use_proxy,
-            license_key=eq.license_key,
-        )
+        cat: dict[str, list[ModelMemento]] = {}
+        current_ref = None
 
-    def restore_from_memento(self, m: EquipmentMemento) -> None:
-        eq = self.current_equipment
-        assert eq is not None
+        for eq_type, models in self._catalog.items():
+            cat[eq_type] = []
+            for idx, m in enumerate(models):
+                snap = ModelMemento(
+                    factory_key=getattr(m, "factory_key", self.selected_key.get()),
+                    equipment_type=m.equipment_type,
+                    name=getattr(m, "name", "Model"),
+                    specs=dict(m.specs),
+                    functions=list(m.functions),
+                    base_software_title=m.base_software_title,
+                    use_online=bool(getattr(m, "use_online", False)),
+                    use_analytics=bool(getattr(m, "use_analytics", False)),
+                    use_proxy=bool(getattr(m, "use_proxy", False)),
+                    license_key=str(getattr(m, "license_key", "")),
+                    software_state_name=str(getattr(m, "software_state_name", "IDLE")),
+                )
+                cat[eq_type].append(snap)
 
-        eq.equipment_type = m.equipment_type
-        eq.specs = dict(m.specs)
-        eq.functions = list(m.functions)
+                if self.current_equipment is m:
+                    current_ref = (eq_type, idx)
 
-        eq.base_software_title = m.base_software_title
-        eq.use_online = m.use_online
-        eq.use_analytics = m.use_analytics
-        eq.use_proxy = m.use_proxy
-        eq.license_key = m.license_key
+        return EquipmentMemento(catalog=cat, current_ref=current_ref)
 
-        self.var_online.set(eq.use_online)
-        self.var_analytics.set(eq.use_analytics)
-        self.var_use_proxy.set(eq.use_proxy)
-        self.license_entry.delete(0, "end")
-        self.license_entry.insert(0, eq.license_key or "VALID-KEY")
+    def restore_from_memento(self, mem: EquipmentMemento) -> None:
+        # 1) пересоздаём весь каталог
+        self._catalog = {}
 
-        self.rebuild_software_from_flags()
+        for eq_type, snaps in mem.catalog.items():
+            self._catalog[eq_type] = []
+            for s in snaps:
+                factory = self.registry.get(s.factory_key)
+                eq = factory.create()
 
-    # =========================================================
+                setattr(eq, "factory_key", s.factory_key)
+
+                eq.equipment_type = s.equipment_type
+                eq.name = s.name
+                eq.specs = dict(s.specs)
+                eq.functions = list(s.functions)
+
+                eq.base_software_title = s.base_software_title
+                eq.use_online = s.use_online
+                eq.use_analytics = s.use_analytics
+                eq.use_proxy = s.use_proxy
+                eq.license_key = s.license_key
+
+                setattr(eq, "software_state_name", s.software_state_name)
+
+                # собрать софт по флагам
+                self.current_equipment = eq
+                self.rebuild_software_from_flags()
+
+                self._catalog[eq_type].append(eq)
+
+        # 2) восстановить текущий выбранный объект
+        self.current_equipment = None
+        if mem.current_ref is not None:
+            t, idx = mem.current_ref
+            if t in self._catalog and 0 <= idx < len(self._catalog[t]):
+                self.current_equipment = self._catalog[t][idx]
+
+        # 3) синх UI + дерево
+        if self.current_equipment:
+            m = self.current_equipment
+            self.var_online.set(bool(getattr(m, "use_online", False)))
+            self.var_analytics.set(bool(getattr(m, "use_analytics", False)))
+            self.var_use_proxy.set(bool(getattr(m, "use_proxy", False)))
+            self.license_entry.delete(0, "end")
+            self.license_entry.insert(0, getattr(m, "license_key", "") or "VALID-KEY")
+            self.rebuild_software_from_flags()
+
+        self._rebuild_tree()
+
+    # -----------------------------
     # Refresh
-    # =========================================================
+    # -----------------------------
     def refresh_all(self) -> None:
         if not self.current_equipment:
             self.txt_equipment.delete("1.0", "end")

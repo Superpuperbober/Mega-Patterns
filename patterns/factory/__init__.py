@@ -4,6 +4,7 @@ from .equipment_factory import (
     TreadmillFactory,
     RowingMachineFactory,
     FactoryRegistry,
+    GyriFactory
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "TreadmillFactory",
     "RowingMachineFactory",
     "FactoryRegistry",
+    "GyriFactory"
 ]
